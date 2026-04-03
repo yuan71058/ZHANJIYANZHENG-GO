@@ -525,7 +525,7 @@ func exampleBlacklist(client *donghao.Client) {
 // 包含功能:
 //   - 卡密充值
 //   - 修改密码
-//   - 换绑卡密
+//   - 换绑信息（修改用户名/机器码/IP/QQ）
 //   - 绑定推荐人
 //   - 扣除积分
 //   - 添加日志
@@ -571,11 +571,14 @@ func exampleOtherFeatures(client *donghao.Client) {
 		fmt.Printf("修改密码失败: %s\n", result2.Msg())
 	}
 
-	fmt.Println("\n9.3 换绑卡密")
+	fmt.Println("\n9.3 换绑信息（修改用户名/机器码/IP/QQ）")
 	result3, err := client.Binding(
 		"testuser",
 		"password",
-		"NEW-CARD-123",
+		"newusername",    // 新用户名（为空则不修改）
+		"AA:BB:CC:DD:EE:FF", // 新机器码（为空则不修改）
+		"192.168.1.200", // 新IP地址（为空则不修改）
+		"123456789",     // 新QQ号（为空则不修改）
 		"1.0.0",
 		"00:11:22:33:44:55",
 		"192.168.1.100",
@@ -583,7 +586,7 @@ func exampleOtherFeatures(client *donghao.Client) {
 	)
 
 	if err != nil {
-		log.Printf("换绑卡密失败: %v\n", err)
+		log.Printf("换绑失败: %v\n", err)
 	} else if result3.IsSuccess() {
 		fmt.Printf("换绑成功: %v\n", result3.Data)
 	} else {

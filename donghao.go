@@ -463,19 +463,13 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 	return &result, nil
 }
 
-// generateSignForPlain 生成明文模式的签名（按字母顺序排序，与url.Values.Encode()一致）
+// generateSignForPlain 生成明文模式的签名
 func (c *Client) generateSignForPlain(params map[string]string) string {
-	var keys []string
-	for k := range params {
-		if k != "sign" && k != "act" && k != "appid" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
 	var signParts []string
-	for _, k := range keys {
-		signParts = append(signParts, fmt.Sprintf("%s=%s", k, params[k]))
+	for k, v := range params {
+		if k != "sign" && k != "act" && k != "appid" {
+			signParts = append(signParts, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 	signData := strings.Join(signParts, "&")
 
@@ -827,12 +821,15 @@ func (c *Client) Uppwd(user, pwd, newpwd, ver, mac, ip, clientid string) (*Resul
 	return c.httpPost("uppwd", params)
 }
 
-// Binding 绑定卡密（换绑）
+// Binding 绑定换绑（修改用户信息）
 //
 // 参数:
 //   - user: 用户名
 //   - pwd: 密码
-//   - card: 新卡密
+//   - newuser: 新用户名（可选，为空则不修改）
+//   - newmac: 新机器码（可选，为空则不修改）
+//   - newip: 新IP地址（可选，为空则不修改）
+//   - newuserqq: 新QQ号（可选，为空则不修改）
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -844,16 +841,19 @@ func (c *Client) Uppwd(user, pwd, newpwd, ver, mac, ip, clientid string) (*Resul
 //
 // 说明:
 //
-//	用于更换用户的授权卡密，不需要tokenid
-func (c *Client) Binding(user, pwd, card, ver, mac, ip, clientid string) (*Result, error) {
+//	用于更换用户的授权信息（用户名、机器码、IP、QQ），不需要tokenid
+func (c *Client) Binding(user, pwd, newuser, newmac, newip, newuserqq, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
-		"user":     user,
-		"pwd":      pwd,
-		"card":     card,
-		"ver":      ver,
-		"mac":      mac,
-		"ip":       ip,
-		"clientid": clientid,
+		"user":      user,
+		"pwd":       pwd,
+		"newuser":   newuser,
+		"newmac":    newmac,
+		"newip":     newip,
+		"newuserqq": newuserqq,
+		"ver":       ver,
+		"mac":       mac,
+		"ip":        ip,
+		"clientid":  clientid,
 	}
 
 	return c.httpPost("binding", params)
@@ -1639,17 +1639,11 @@ func GenerateMD5(text string) string {
 // 返回:
 //   - string: 生成的签名字符串
 func GenerateSign(params map[string]string, appKey string, template string) string {
-	var keys []string
-	for k := range params {
-		if k != "sign" && k != "act" && k != "appid" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
 	var signParts []string
-	for _, k := range keys {
-		signParts = append(signParts, fmt.Sprintf("%s=%s", k, params[k]))
+	for k, v := range params {
+		if k != "sign" && k != "act" && k != "appid" {
+			signParts = append(signParts, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 	signStr := strings.Join(signParts, "&")
 
