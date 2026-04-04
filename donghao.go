@@ -47,6 +47,8 @@ package donghao
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
@@ -65,11 +67,12 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	chacha20poly1305 "golang.org/x/crypto/chacha20poly1305"
 )
 
 // Client 冬浩验证客户端结构体
@@ -84,9 +87,12 @@ type Client struct {
 	UseGBK            bool          // RC4加密是否使用GBK编码（与PHP兼容）
 	Timeout           time.Duration // HTTP请求超时时间
 	EncryptionType    int           // 加密类型
-	EncryptionKey     string        // 加密密钥
+	EncryptionKey     string        // 加密密钥（RC4/RSA/自定义加密时使用）
+	AesGcmKey         string        // AES-256-GCM密钥（ENC_AES_GCM模式使用，32字节）
+	ChaChaKey         string        // ChaCha20-Poly1305密钥（ENC_CHACHA模式使用，32字节）
 	HeartbeatInterval time.Duration // 心跳间隔
 	currentToken      string        // 当前登录token
+	currentUUID       string        // 当前客户端UUID
 	currentUser       string        // 当前登录用户名
 	heartbeatRunning  bool          // 心跳运行标志
 	heartbeatCancel   chan bool     // 心跳取消通道
@@ -258,11 +264,13 @@ func (r *Result) GetGroupData() (string, error) {
 
 // 加密类型常量
 const (
-	ENC_NONE   = 0 // 不加密，明文传输
-	ENC_RC4    = 1 // RC4流加密算法
-	ENC_RSA    = 2 // RSA非对称加密
-	ENC_BASE64 = 3 // Base64编码（仅编码，非加密）
-	ENC_CUSTOM = 4 // 自定义加密算法
+	ENC_NONE    = 0 // 不加密，明文传输
+	ENC_RC4     = 1 // RC4流加密算法
+	ENC_RSA     = 2 // RSA非对称加密
+	ENC_BASE64  = 3 // Base64编码（仅编码，非加密）
+	ENC_CUSTOM  = 4 // 自定义加密算法
+	ENC_AES_GCM = 5 // AES-256-GCM认证加密（与PHP mi_type==5兼容）
+	ENC_CHACHA  = 6 // ChaCha20-Poly1305认证加密（与PHP mi_type==6兼容）
 )
 
 // NewClient 创建新的冬浩验证客户端
@@ -284,7 +292,8 @@ func NewClient(baseURL string, appID int) *Client {
 		AppID:             appID,
 		Timeout:           30 * time.Second,
 		EncryptionType:    ENC_NONE,
-		HeartbeatInterval: 300 * time.Second,
+		UseGBK:            true,
+		HeartbeatInterval: 150 * time.Second,
 		heartbeatCancel:   make(chan bool),
 		httpClient:        &http.Client{Timeout: 30 * time.Second},
 	}
@@ -302,11 +311,17 @@ func (c *Client) SetTimeout(seconds int) {
 // SetEncryption 设置数据加密方式
 //
 // 参数:
-//   - encType: 加密类型，参见 ENC_NONE, ENC_RC4, ENC_RSA, ENC_BASE64, ENC_CUSTOM
-//   - key: 加密密钥（RC4/自定义加密时使用）
+//   - encType: 加密类型，参见 ENC_NONE, ENC_RC4, ENC_RSA, ENC_BASE64, ENC_CUSTOM, ENC_AES_GCM, ENC_CHACHA
+//   - key: 加密密钥（RC4/自定义加密/AES-GCM/ChaCha20时使用）
 func (c *Client) SetEncryption(encType int, key string) {
 	c.EncryptionType = encType
 	c.EncryptionKey = key
+	switch encType {
+	case ENC_AES_GCM:
+		c.AesGcmKey = key
+	case ENC_CHACHA:
+		c.ChaChaKey = key
+	}
 }
 
 // SetSignConfig 设置签名配置
@@ -339,6 +354,14 @@ func (c *Client) GetToken() string {
 	return c.currentToken
 }
 
+// GetUUID 获取当前客户端UUID
+//
+// 返回:
+//   - string: UUID值，未登录时返回空字符串
+func (c *Client) GetUUID() string {
+	return c.currentUUID
+}
+
 // GetCurrentUser 获取当前登录用户名
 //
 // 返回:
@@ -360,6 +383,15 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 	apiURL := fmt.Sprintf("%s/api.php?appid=%d", c.BaseURL, c.AppID)
 
 	params["action"] = action
+
+	// 自动注入必需参数：t（时间戳）、uuid、token
+	params["t"] = fmt.Sprintf("%d", time.Now().Unix())
+	if c.currentUUID != "" {
+		params["uuid"] = c.currentUUID
+	}
+	if c.currentToken != "" {
+		params["token"] = c.currentToken
+	}
 
 	var postData string
 	var plainData string
@@ -440,6 +472,13 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 		if err := json.Unmarshal([]byte(decryptedData), &result); err != nil {
 			return nil, err
 		}
+		// Token轮换机制：更新为服务端返回的新token和uuid
+		if result.Token != "" {
+			c.currentToken = result.Token
+		}
+		if result.Uuid != "" {
+			c.currentUUID = result.Uuid
+		}
 		return &result, nil
 	}
 
@@ -452,12 +491,26 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 	}
 
 	if plainResp.Data != nil {
+		if plainResp.Data.Token != "" {
+			c.currentToken = plainResp.Data.Token
+		}
+		if plainResp.Data.Uuid != "" {
+			c.currentUUID = plainResp.Data.Uuid
+		}
 		return plainResp.Data, nil
 	}
 
 	var result Result
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
+	}
+
+	// Token轮换机制：更新为服务端返回的新token和uuid
+	if result.Token != "" {
+		c.currentToken = result.Token
+	}
+	if result.Uuid != "" {
+		c.currentUUID = result.Uuid
 	}
 
 	return &result, nil
@@ -523,6 +576,11 @@ func (c *Client) generateSignForEncrypted(data string) string {
 //	    fmt.Println("登录成功，Token:", client.GetToken())
 //	}
 func (c *Client) Login(user, pwd, ver, mac, ip, clientid string) (*Result, error) {
+	// 生成初始UUID（首次登录时使用）
+	if c.currentUUID == "" {
+		c.currentUUID = generateUUID()
+	}
+
 	params := map[string]string{
 		"user":     user,
 		"pwd":      pwd,
@@ -1583,6 +1641,10 @@ func (c *Client) Encrypt(data string) (string, error) {
 		return base64.StdEncoding.EncodeToString([]byte(data)), nil
 	case ENC_CUSTOM:
 		return data, nil
+	case ENC_AES_GCM:
+		return aesGcmEncrypt(data, c.AesGcmKey)
+	case ENC_CHACHA:
+		return chachaEncrypt(data, c.ChaChaKey)
 	default:
 		return "", errors.New("不支持的加密类型")
 	}
@@ -1612,6 +1674,10 @@ func (c *Client) Decrypt(data string) (string, error) {
 		return string(decoded), nil
 	case ENC_CUSTOM:
 		return data, nil
+	case ENC_AES_GCM:
+		return aesGcmDecrypt(data, c.AesGcmKey)
+	case ENC_CHACHA:
+		return chachaDecrypt(data, c.ChaChaKey)
 	default:
 		return "", errors.New("不支持的加密类型")
 	}
@@ -1627,6 +1693,27 @@ func (c *Client) Decrypt(data string) (string, error) {
 func GenerateMD5(text string) string {
 	hash := md5.Sum([]byte(text))
 	return hex.EncodeToString(hash[:])
+}
+
+// generateUUID 生成UUID v4
+//
+// 返回:
+//   - string: UUID字符串（如：550e8400-e29b-41d4-a716-446655440000）
+func generateUUID() string {
+	uuid := make([]byte, 16)
+	_, err := rand.Read(uuid)
+	if err != nil {
+		now := time.Now().UnixNano()
+		return fmt.Sprintf("%08x-%04x-4%03x-%04x-%012x",
+			now&0xFFFFFFFF,
+			(now>>32)&0xFFFF,
+			(now>>48)&0x0FFF,
+			(now>>60)&0xFFFF,
+			now&0xFFFFFFFFFFFF)
+	}
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
 }
 
 // GenerateSign 根据参数生成签名
@@ -2451,4 +2538,135 @@ func cleanHardwareString(s string) string {
 	}
 
 	return s
+}
+
+// ==================== AES-GCM 加密函数 ====================
+
+// padKeyTo32Bytes 将密钥填充或截断为32字节
+func padKeyTo32Bytes(key string) []byte {
+	keyBytes := []byte(key)
+	if len(keyBytes) >= 32 {
+		return keyBytes[:32]
+	}
+	padded := make([]byte, 32)
+	copy(padded, keyBytes)
+	return padded
+}
+
+// aesGcmEncrypt AES-256-GCM加密
+//
+// 参数:
+//   - plaintext: 待加密数据
+//   - key: 32字节密钥
+//
+// 返回:
+//   - string: Base64编码的加密数据（Nonce + 密文 + Tag）
+//   - error: 加密错误
+func aesGcmEncrypt(plaintext string, key string) (string, error) {
+	keyBytes := padKeyTo32Bytes(key)
+	block, err := aes.NewCipher(keyBytes)
+	if err != nil {
+		return "", fmt.Errorf("AES cipher creation failed: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("GCM mode creation failed: %v", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("nonce generation failed: %v", err)
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// aesGcmDecrypt AES-256-GCM解密
+//
+// 参数:
+//   - encoded: Base64编码的加密数据
+//   - key: 32字节密钥
+//
+// 返回:
+//   - string: 解密后的明文
+//   - error: 解密错误
+func aesGcmDecrypt(encoded string, key string) (string, error) {
+	keyBytes := padKeyTo32Bytes(key)
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode failed: %v", err)
+	}
+	block, err := aes.NewCipher(keyBytes)
+	if err != nil {
+		return "", fmt.Errorf("AES cipher creation failed: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("GCM mode creation failed: %v", err)
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", errors.New("ciphertext too short")
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decryption failed: %v", err)
+	}
+	return string(plaintext), nil
+}
+
+// ==================== ChaCha20-Poly1305 加密函数 ====================
+
+// chachaEncrypt ChaCha20-Poly1305加密
+//
+// 参数:
+//   - plaintext: 待加密数据
+//   - key: 32字节密钥
+//
+// 返回:
+//   - string: Base64编码的加密数据（Nonce + 密文 + Tag）
+//   - error: 加密错误
+func chachaEncrypt(plaintext string, key string) (string, error) {
+	keyBytes := padKeyTo32Bytes(key)
+	aead, err := chacha20poly1305.NewX(keyBytes)
+	if err != nil {
+		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err = rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("nonce generation failed: %v", err)
+	}
+	ciphertext := aead.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// chachaDecrypt ChaCha20-Poly1305解密
+//
+// 参数:
+//   - encoded: Base64编码的加密数据
+//   - key: 32字节密钥
+//
+// 返回:
+//   - string: 解密后的明文
+//   - error: 解密错误
+func chachaDecrypt(encoded string, key string) (string, error) {
+	keyBytes := padKeyTo32Bytes(key)
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode failed: %v", err)
+	}
+	aead, err := chacha20poly1305.NewX(keyBytes)
+	if err != nil {
+		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
+	}
+	nonceSize := aead.NonceSize()
+	if len(data) < nonceSize {
+		return "", errors.New("ciphertext too short")
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decryption failed: %v", err)
+	}
+	return string(plaintext), nil
 }
