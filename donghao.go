@@ -72,7 +72,7 @@ import (
 	"sync"
 	"time"
 
-	chacha20poly1305 "golang.org/x/crypto/chacha20poly1305"
+	// chacha20poly1305 "golang.org/x/crypto/chacha20poly1305" // 已禁用: OpenSSL 1.1.1 不支持 AEAD Tag
 )
 
 // Client 冬浩验证客户端结构体
@@ -89,7 +89,7 @@ type Client struct {
 	EncryptionType    int           // 加密类型
 	EncryptionKey     string        // 加密密钥（RC4/RSA/自定义加密时使用）
 	AesGcmKey         string        // AES-256-GCM密钥（ENC_AES_GCM模式使用，32字节）
-	ChaChaKey         string        // ChaCha20-Poly1305密钥（ENC_CHACHA模式使用，32字节）
+	// ChaChaKey         string        // ChaCha20-Poly1305密钥 - 已禁用
 	HeartbeatInterval time.Duration // 心跳间隔
 	currentToken      string        // 当前登录token
 	currentUUID       string        // 当前客户端UUID
@@ -270,7 +270,7 @@ const (
 	ENC_BASE64  = 3 // Base64编码（仅编码，非加密）
 	ENC_CUSTOM  = 4 // 自定义加密算法
 	ENC_AES_GCM = 5 // AES-256-GCM认证加密（与PHP mi_type==5兼容）
-	ENC_CHACHA  = 6 // ChaCha20-Poly1305认证加密（与PHP mi_type==6兼容）
+	// ENC_CHACHA  = 6 // ChaCha20-Poly1305 - 已禁用: OpenSSL 1.1.1 不支持 AEAD Tag
 )
 
 // NewClient 创建新的冬浩验证客户端
@@ -311,16 +311,16 @@ func (c *Client) SetTimeout(seconds int) {
 // SetEncryption 设置数据加密方式
 //
 // 参数:
-//   - encType: 加密类型，参见 ENC_NONE, ENC_RC4, ENC_RSA, ENC_BASE64, ENC_CUSTOM, ENC_AES_GCM, ENC_CHACHA
-//   - key: 加密密钥（RC4/自定义加密/AES-GCM/ChaCha20时使用）
+//   - encType: 加密类型，参见 ENC_NONE, ENC_RC4, ENC_RSA, ENC_BASE64, ENC_CUSTOM, ENC_AES_GCM
+//   - key: 加密密钥（RC4/自定义加密/AES-GCM时使用）
 func (c *Client) SetEncryption(encType int, key string) {
 	c.EncryptionType = encType
 	c.EncryptionKey = key
 	switch encType {
 	case ENC_AES_GCM:
 		c.AesGcmKey = key
-	case ENC_CHACHA:
-		c.ChaChaKey = key
+	// case ENC_CHACHA: // 已禁用
+	// 	c.ChaChaKey = key
 	}
 }
 
@@ -1643,8 +1643,8 @@ func (c *Client) Encrypt(data string) (string, error) {
 		return data, nil
 	case ENC_AES_GCM:
 		return aesGcmEncrypt(data, c.AesGcmKey)
-	case ENC_CHACHA:
-		return chachaEncrypt(data, c.ChaChaKey)
+	// case ENC_CHACHA: // 已禁用
+	// 	return chachaEncrypt(data, c.ChaChaKey)
 	default:
 		return "", errors.New("不支持的加密类型")
 	}
@@ -1676,8 +1676,8 @@ func (c *Client) Decrypt(data string) (string, error) {
 		return data, nil
 	case ENC_AES_GCM:
 		return aesGcmDecrypt(data, c.AesGcmKey)
-	case ENC_CHACHA:
-		return chachaDecrypt(data, c.ChaChaKey)
+	// case ENC_CHACHA: // 已禁用
+	// 	return chachaDecrypt(data, c.ChaChaKey)
 	default:
 		return "", errors.New("不支持的加密类型")
 	}
@@ -2615,7 +2615,8 @@ func aesGcmDecrypt(encoded string, key string) (string, error) {
 	return string(plaintext), nil
 }
 
-// ==================== ChaCha20-Poly1305 加密函数 ====================
+// ==================== ChaCha20-Poly1305 加密函数 - 已禁用 ====================
+// OpenSSL 1.1.1 不支持 AEAD Tag，导致加密解密不兼容
 
 // chachaEncrypt ChaCha20-Poly1305加密
 //
@@ -2626,20 +2627,20 @@ func aesGcmDecrypt(encoded string, key string) (string, error) {
 // 返回:
 //   - string: Base64编码的加密数据（Nonce + 密文 + Tag）
 //   - error: 加密错误
-func chachaEncrypt(plaintext string, key string) (string, error) {
-	keyBytes := padKeyTo32Bytes(key)
-	aead, err := chacha20poly1305.NewX(keyBytes)
-	if err != nil {
-		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err = rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("nonce generation failed: %v", err)
-	}
-	ciphertext := aead.Seal(nonce, nonce, []byte(plaintext), nil)
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
-}
-
+// func chachaEncrypt(plaintext string, key string) (string, error) {
+// 	keyBytes := padKeyTo32Bytes(key)
+// 	aead, err := chacha20poly1305.NewX(keyBytes)
+// 	if err != nil {
+// 		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
+// 	}
+// 	nonce := make([]byte, aead.NonceSize())
+// 	if _, err = rand.Read(nonce); err != nil {
+// 		return "", fmt.Errorf("nonce generation failed: %v", err)
+// 	}
+// 	ciphertext := aead.Seal(nonce, nonce, []byte(plaintext), nil)
+// 	return base64.StdEncoding.EncodeToString(ciphertext), nil
+// }
+// 
 // chachaDecrypt ChaCha20-Poly1305解密
 //
 // 参数:
@@ -2649,24 +2650,24 @@ func chachaEncrypt(plaintext string, key string) (string, error) {
 // 返回:
 //   - string: 解密后的明文
 //   - error: 解密错误
-func chachaDecrypt(encoded string, key string) (string, error) {
-	keyBytes := padKeyTo32Bytes(key)
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return "", fmt.Errorf("base64 decode failed: %v", err)
-	}
-	aead, err := chacha20poly1305.NewX(keyBytes)
-	if err != nil {
-		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
-	}
-	nonceSize := aead.NonceSize()
-	if len(data) < nonceSize {
-		return "", errors.New("ciphertext too short")
-	}
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("decryption failed: %v", err)
-	}
-	return string(plaintext), nil
-}
+// func chachaDecrypt(encoded string, key string) (string, error) {
+// 	keyBytes := padKeyTo32Bytes(key)
+// 	data, err := base64.StdEncoding.DecodeString(encoded)
+// 	if err != nil {
+// 		return "", fmt.Errorf("base64 decode failed: %v", err)
+// 	}
+// 	aead, err := chacha20poly1305.NewX(keyBytes)
+// 	if err != nil {
+// 		return "", fmt.Errorf("ChaCha20-Poly1305 creation failed: %v", err)
+// 	}
+// 	nonceSize := aead.NonceSize()
+// 	if len(data) < nonceSize {
+// 		return "", errors.New("ciphertext too short")
+// 	}
+// 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+// 	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+// 	if err != nil {
+// 		return "", fmt.Errorf("decryption failed: %v", err)
+// 	}
+// 	return string(plaintext), nil
+// }
