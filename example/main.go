@@ -206,6 +206,48 @@ func exampleLogin(client *donghao.Client) {
 	fmt.Println()
 }
 
+// exampleLoginCard 展示卡密登录功能
+//
+// 卡密登录是一种无需账号密码的登录方式：
+//   - 使用充值卡号直接登录并创建/关联账号
+//   - 需要后台开启"充值卡登录模式"(dl_type=1)
+//   - 适用于发卡平台销售场景
+//
+// 参数说明：
+//   - card: 卡密号 (必填)
+//   - ver: 软件版本号 (必填)
+//   - mac: 设备MAC地址 (必填)
+//   - ip: IP地址 (必填)
+//   - clientid: 客户端ID (必填)
+func exampleLoginCard(client *donghao.Client) {
+	fmt.Println("3.5 卡密登录功能演示")
+	fmt.Println("----------------------------------------")
+
+	result, err := client.LoginCard(
+		"CARD-TEST-123456",
+		"1.0.0",
+		"00:11:22:33:44:55",
+		"192.168.1.100",
+		"client001",
+	)
+
+	if err != nil {
+		log.Printf("卡密登录错误: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	if result.IsSuccess() {
+		fmt.Printf("卡密登录成功!\n")
+		fmt.Printf("Token: %s\n", client.GetToken())
+		fmt.Printf("当前用户: %s\n", client.GetCurrentUser())
+	} else {
+		fmt.Printf("卡密登录失败: %s\n", result.Msg())
+	}
+
+	fmt.Println()
+}
+
 // exampleRegister 展示用户注册功能
 //
 // 注册需要填写的信息包括：
@@ -661,6 +703,7 @@ func exampleOtherFeatures(client *donghao.Client) {
 		"00:11:22:33:44:55",
 		"192.168.1.100",
 		"client001",
+		"",
 	)
 
 	if err != nil {

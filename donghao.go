@@ -61,6 +61,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -339,11 +340,24 @@ func (c *Client) SetSignConfig(appKey string, template string, needSign bool) {
 // SetHeartbeatInterval 设置自动心跳间隔
 //
 // 参数:
-//   - seconds: 心跳间隔秒数，默认300秒（5分钟）
+//   - seconds: 心跳间隔秒数，默认150秒
 //
 // 心跳用于维持用户在线状态，防止会话过期
 func (c *Client) SetHeartbeatInterval(seconds int) {
 	c.HeartbeatInterval = time.Duration(seconds) * time.Second
+}
+
+// SetUseGBK 设置RC4加密是否使用GBK编码
+//
+// 参数:
+//   - use: true=使用GBK编码（与PHP服务端兼容），false=使用UTF-8编码
+//
+// 说明:
+//
+//	PHP端的RC4加密默认使用GBK编码处理中文，Go端需要保持一致才能正确解密
+//	默认值为true，除非确定服务端使用UTF-8，否则不要修改
+func (c *Client) SetUseGBK(use bool) {
+	c.UseGBK = use
 }
 
 // GetToken 获取当前登录Token
@@ -368,6 +382,43 @@ func (c *Client) GetUUID() string {
 //   - string: 用户名，未登录时返回空字符串
 func (c *Client) GetCurrentUser() string {
 	return c.currentUser
+}
+
+// ClientStatus 客户端状态信息
+//
+// 返回客户端当前的完整登录状态，用于调试或界面展示
+type ClientStatus struct {
+	Token     string // 当前登录Token
+	UUID      string // 当前客户端UUID
+	User      string // 当前登录用户名
+	IsLoggedIn bool   // 是否已登录（Token非空）
+	BaseURL   string // API服务器地址
+	AppID     int    // 软件ID
+}
+
+// GetClientStatus 获取客户端完整状态
+//
+// 返回:
+//   - ClientStatus: 包含Token、UUID、用户名等信息的结构体
+func (c *Client) GetClientStatus() ClientStatus {
+	return ClientStatus{
+		Token:      c.currentToken,
+		UUID:       c.currentUUID,
+		User:       c.currentUser,
+		IsLoggedIn: c.currentToken != "",
+		BaseURL:    c.BaseURL,
+		AppID:      c.AppID,
+	}
+}
+
+// ResetSession 重置登录会话
+//
+// 清除当前保存的 Token、UUID、用户名等所有会话信息
+// 用于切换账号或退出登录后彻底清理状态
+func (c *Client) ResetSession() {
+	c.currentToken = ""
+	c.currentUUID = ""
+	c.currentUser = ""
 }
 
 // httpPost 发送HTTP POST请求（内部方法）
@@ -663,6 +714,52 @@ func (c *Client) LoginCard(card, ver, mac, ip, clientid string) (*Result, error)
 	return result, nil
 }
 
+// LoginWithDevice 便捷登录（自动获取设备信息）
+//
+// 自动获取机器码、IP地址、客户端ID，简化登录调用
+// 内部调用 GetMachineCodeSafe()、GetLocalIP()、GenerateClientID() 获取设备信息
+//
+// 参数:
+//   - user: 用户名
+//   - pwd: 密码
+//   - ver: 软件版本号
+//
+// 返回:
+//   - *Result: 登录结果
+//   - error: 请求错误
+//
+// 使用示例:
+//
+//	result, err := client.LoginWithDevice("username", "password", "1.0")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func (c *Client) LoginWithDevice(user, pwd, ver string) (*Result, error) {
+	mac := GetMachineCodeSafe()
+	ip := GetLocalIP()
+	clientid := GenerateClientID()
+	return c.Login(user, pwd, ver, mac, ip, clientid)
+}
+
+// LoginCardWithDevice 便捷卡密登录（自动获取设备信息）
+//
+// 使用卡密直接登录，无需用户名和密码，自动获取设备信息
+// 注意: 此功能需要后端开启"充值卡登录模式"(dl_type=1)
+//
+// 参数:
+//   - card: 卡密
+//   - ver: 软件版本号
+//
+// 返回:
+//   - *Result: 登录结果
+//   - error: 请求错误
+func (c *Client) LoginCardWithDevice(card, ver string) (*Result, error) {
+	mac := GetMachineCodeSafe()
+	ip := GetLocalIP()
+	clientid := GenerateClientID()
+	return c.LoginCard(card, ver, mac, ip, clientid)
+}
+
 // Reg 用户注册
 //
 // 参数:
@@ -791,6 +888,65 @@ func (c *Client) GetUser(user, tokenid, ver, mac, ip, clientid string) (*Result,
 	}
 
 	return c.httpPost("getuser", params)
+}
+
+// UserInfo 结构化的用户信息
+//
+// 从 GetUser 接口返回的 result 中解析出的结构化数据
+type UserInfo struct {
+	Username    string `json:"user"`           // 用户名
+	Email       string `json:"email"`          // 邮箱
+	UserQQ      string `json:"userqq"`         // QQ号
+	EndTime     string `json:"endtime"`        // 到期时间
+	Point       int    `json:"point"`          // 剩余点数
+	GroupID     int    `json:"groupid"`        // 用户组ID
+	GroupName   string `json:"groupname"`      // 用户组名称
+	Status      string `json:"zt"`             // 状态（1=正常）
+	RegisterTime string `json:"regtime"`       // 注册时间
+	LoginTime   string `json:"logintime"`      // 最后登录时间
+	Referrer    string `json:"tjr"`            // 推荐人
+	RawData     string `json:"-"`              // 原始数据（Base64解码后）
+}
+
+// GetUserFullInfo 获取结构化用户信息
+//
+// 封装 GetUser 接口，自动解析返回数据为 UserInfo 结构体
+// 包含用户名、到期时间、点数、用户组等完整信息
+//
+// 参数:
+//   - user: 用户名（为空时使用当前登录用户）
+//   - tokenid: 登录token（为空时使用当前token）
+//   - ver: 软件版本号
+//   - mac: 机器码
+//   - ip: 客户端IP地址
+//   - clientid: 客户端ID
+//
+// 返回:
+//   - *UserInfo: 结构化用户信息，各字段可能为空值
+//   - error: 请求错误或解析错误
+func (c *Client) GetUserFullInfo(user, tokenid, ver, mac, ip, clientid string) (*UserInfo, error) {
+	if user == "" {
+		user = c.currentUser
+	}
+	if tokenid == "" {
+		tokenid = c.currentToken
+	}
+
+	result, err := c.GetUser(user, tokenid, ver, mac, ip, clientid)
+	if err != nil {
+		return nil, err
+	}
+
+	dataStr, err := result.GetData()
+	if err != nil {
+		return nil, err
+	}
+
+	info := &UserInfo{RawData: dataStr}
+	if err := json.Unmarshal([]byte(dataStr), info); err != nil {
+		return info, nil
+	}
+	return info, nil
 }
 
 // GetUdata 获取用户云端数据
@@ -1271,6 +1427,32 @@ func (c *Client) SetBlack(bType, bData, bBz, ver, mac, ip, clientid string) (*Re
 	return c.httpPost("setblack", params)
 }
 
+// IsBlacklisted 检查是否在黑名单中（返回布尔值）
+//
+// 封装 GetBlack 接口，将结果转换为直观的布尔值
+//
+// ⚠️ 注意返回码含义与其他接口相反：
+//   - code=200 → 已拉黑（true）
+//   - code=201 → 未拉黑/验证通过（false）
+//
+// 参数:
+//   - bType: 黑名单类型（"0"=账号, "1"=机器码, "2"=IP）
+//   - bData: 要检查的数据
+//
+// 返回:
+//   - bool: true=已拉黑，false=未拉黑
+//   - error: 请求错误或无法判断
+func (c *Client) IsBlacklisted(bType, bData string) (bool, error) {
+	result, err := c.GetBlack(bType, bData)
+	if err != nil {
+		return false, fmt.Errorf("黑名单查询失败: %v", err)
+	}
+	if result.Code == 200 {
+		return true, nil
+	}
+	return false, nil
+}
+
 // CheckAuth 验证账号密码
 //
 // 参数:
@@ -1301,6 +1483,26 @@ func (c *Client) CheckAuth(user, pwd, ver, mac, ip, clientid, md5 string) (*Resu
 	}
 
 	return c.httpPost("checkauth", params)
+}
+
+// QuickAuth 快捷授权验证（自动获取设备信息）
+//
+// 自动获取机器码、IP地址、客户端ID，简化授权验证调用
+// 内部调用 CheckAuth 接口
+//
+// 参数:
+//   - user: 用户名
+//   - pwd: 密码
+//   - ver: 软件版本号
+//
+// 返回:
+//   - *Result: 验证结果
+//   - error: 请求错误
+func (c *Client) QuickAuth(user, pwd, ver string) (*Result, error) {
+	mac := GetMachineCodeSafe()
+	ip := GetLocalIP()
+	clientid := GenerateClientID()
+	return c.CheckAuth(user, pwd, ver, mac, ip, clientid, "")
 }
 
 // DeductPoints 扣除积分
@@ -1442,6 +1644,37 @@ func (c *Client) Ver(ver, mac, ip, clientid string) (*Result, error) {
 	}
 
 	return c.httpPost("ver", params)
+}
+
+// MD5Check MD5程序校验
+//
+// 当后台开启 md5_check 时，用于校验客户端程序的 MD5 值
+// 无需额外参数，md5 值通过公共参数传递（在请求时自动注入）
+//
+// 参数:
+//   - ver: 软件版本号
+//   - mac: 机器码
+//   - ip: 客户端IP地址
+//   - clientid: 客户端ID
+//
+// 返回:
+//   - *Result: 校验结果，成功返回"MD5验证通过"
+//   - error: 请求错误
+//
+// 使用示例:
+//
+//	// 先计算程序自身MD5
+//	md5Str, _ := donghao.FileMD5(os.Args[0])
+//	result, err := client.MD5Check("1.0", mac, ip, clientID)
+func (c *Client) MD5Check(ver, mac, ip, clientid string) (*Result, error) {
+	params := map[string]string{
+		"ver":      ver,
+		"mac":      mac,
+		"ip":       ip,
+		"clientid": clientid,
+	}
+
+	return c.httpPost("md5", params)
 }
 
 // GetUdata2 获取用户云数据2
@@ -2223,6 +2456,95 @@ func GetMachineCodeSafe() string {
 		return code
 	}
 	return getFallbackMachineCode()
+}
+
+// GetLocalIP 获取本机IP地址
+//
+// 按优先级尝试获取IP地址：
+//   1. 尝试通过UDP连接获取本地地址（最快）
+//   2. 获取所有网络接口的非回环IPv4地址
+//   3. 返回 "127.0.0.1" 作为兜底
+//
+// 返回:
+//   - string: 本机IP地址，如 "192.168.1.100"
+//
+// 使用示例:
+//
+//	ip := donghao.GetLocalIP()
+//	fmt.Println("本机IP:", ip)
+func GetLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err == nil {
+		defer conn.Close()
+		addr := conn.LocalAddr().(*net.UDPAddr)
+		if addr != nil && addr.IP != nil {
+			return addr.IP.String()
+		}
+	}
+
+	interfaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range interfaces {
+			if iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				ip = ip.To4()
+				if ip != nil {
+					return ip.String()
+				}
+			}
+		}
+	}
+
+	return "127.0.0.1"
+}
+
+// FileMD5 计算文件的MD5哈希值
+//
+// 用于 md5_check 接口校验程序完整性，将程序的 MD5 值传给服务端验证
+//
+// 参数:
+//   - filePath: 文件路径（可以是绝对路径或相对路径）
+//
+// 返回:
+//   - string: 文件的32位小写十六进制MD5值
+//   - error: 文件不存在或读取失败时的错误信息
+//
+// 使用示例:
+//
+//	md5Str, err := donghao.FileMD5("./myapp.exe")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Println("文件MD5:", md5Str) // 输出: d41d8cd98f00b204e9800998ecf8427e
+func FileMD5(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("无法打开文件 %s: %v", filePath, err)
+	}
+	defer file.Close()
+
+	hash := md5.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", fmt.Errorf("读取文件失败: %v", err)
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // ==================== Windows 硬件信息获取 ====================
