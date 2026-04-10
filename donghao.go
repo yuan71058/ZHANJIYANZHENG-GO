@@ -133,18 +133,15 @@ func (r *Result) Msg() string {
 	}
 }
 
-// GetTokenID 获取登录返回的tokenid
+// GetTokenID 获取登录返回的token
 func (r *Result) GetTokenID() string {
 	if r.Result == nil {
 		return ""
 	}
 	switch v := r.Result.(type) {
 	case map[string]interface{}:
-		if tokenID, ok := v["tokenid"].(string); ok {
-			return tokenID
-		}
-		if tokenID, ok := v["tokenid"].(float64); ok {
-			return strconv.FormatFloat(tokenID, 'f', 0, 64)
+		if token, ok := v["token"].(string); ok {
+			return token
 		}
 		return ""
 	default:
@@ -805,7 +802,7 @@ func (c *Client) Reg(user, pwd, card, userqq, email, tjr, ver, mac, ip, clientid
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -818,10 +815,10 @@ func (c *Client) Reg(user, pwd, card, userqq, email, tjr, ver, mac, ip, clientid
 // 说明:
 //
 //	注销成功后会清除本地保存的token
-func (c *Client) Logout(user, tokenid, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) Logout(user, token, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"ver":      ver,
 		"mac":      mac,
 		"ip":       ip,
@@ -845,7 +842,7 @@ func (c *Client) Logout(user, tokenid, ver, mac, ip, clientid string) (*Result, 
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -858,10 +855,10 @@ func (c *Client) Logout(user, tokenid, ver, mac, ip, clientid string) (*Result, 
 // 说明:
 //
 //	心跳用于维持用户在线状态，建议每分钟发送一次
-func (c *Client) Heartbeat(user, tokenid, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) Heartbeat(user, token, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"ver":      ver,
 		"mac":      mac,
 		"ip":       ip,
@@ -875,7 +872,7 @@ func (c *Client) Heartbeat(user, tokenid, ver, mac, ip, clientid string) (*Resul
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -884,10 +881,10 @@ func (c *Client) Heartbeat(user, tokenid, ver, mac, ip, clientid string) (*Resul
 // 返回:
 //   - *Result: 用户信息，Data字段包含用户详细信息JSON
 //   - error: 请求错误
-func (c *Client) GetUser(user, tokenid, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) GetUser(user, token, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"ver":      ver,
 		"mac":      mac,
 		"ip":       ip,
@@ -922,7 +919,7 @@ type UserInfo struct {
 //
 // 参数:
 //   - user: 用户名（为空时使用当前登录用户）
-//   - tokenid: 登录token（为空时使用当前token）
+//   - token: 登录token（为空时使用当前token）
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -931,15 +928,15 @@ type UserInfo struct {
 // 返回:
 //   - *UserInfo: 结构化用户信息，各字段可能为空值
 //   - error: 请求错误或解析错误
-func (c *Client) GetUserFullInfo(user, tokenid, ver, mac, ip, clientid string) (*UserInfo, error) {
+func (c *Client) GetUserFullInfo(user, token, ver, mac, ip, clientid string) (*UserInfo, error) {
 	if user == "" {
 		user = c.currentUser
 	}
-	if tokenid == "" {
-		tokenid = c.currentToken
+	if token == "" {
+		token = c.currentToken
 	}
 
-	result, err := c.GetUser(user, tokenid, ver, mac, ip, clientid)
+	result, err := c.GetUser(user, token, ver, mac, ip, clientid)
 	if err != nil {
 		return nil, err
 	}
@@ -960,7 +957,7 @@ func (c *Client) GetUserFullInfo(user, tokenid, ver, mac, ip, clientid string) (
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -969,10 +966,10 @@ func (c *Client) GetUserFullInfo(user, tokenid, ver, mac, ip, clientid string) (
 // 返回:
 //   - *Result: 用户数据
 //   - error: 请求错误
-func (c *Client) GetUdata(user, tokenid, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) GetUdata(user, token, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"ver":      ver,
 		"mac":      mac,
 		"ip":       ip,
@@ -986,7 +983,7 @@ func (c *Client) GetUdata(user, tokenid, ver, mac, ip, clientid string) (*Result
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - udata: 用户数据（字符串格式，建议JSON）
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -996,10 +993,10 @@ func (c *Client) GetUdata(user, tokenid, ver, mac, ip, clientid string) (*Result
 // 返回:
 //   - *Result: 设置结果
 //   - error: 请求错误
-func (c *Client) SetUdata(user, tokenid, udata, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) SetUdata(user, token, udata, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"udata":    udata,
 		"ver":      ver,
 		"mac":      mac,
@@ -1146,7 +1143,7 @@ func (c *Client) Recharge(user, card, ver, mac, ip, clientid string) (*Result, e
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - cloudkey: 变量名
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -1160,10 +1157,10 @@ func (c *Client) Recharge(user, card, ver, mac, ip, clientid string) (*Result, e
 // 说明:
 //
 //	云变量是用户级别的键值对存储
-func (c *Client) GetVariable(user, tokenid, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) GetVariable(user, token, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"cloudkey": cloudkey,
 		"ver":      ver,
 		"mac":      mac,
@@ -1178,7 +1175,7 @@ func (c *Client) GetVariable(user, tokenid, cloudkey, ver, mac, ip, clientid str
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - cloudkey: 变量名
 //   - cloudvalue: 变量值
 //   - ver: 软件版本号
@@ -1189,10 +1186,10 @@ func (c *Client) GetVariable(user, tokenid, cloudkey, ver, mac, ip, clientid str
 // 返回:
 //   - *Result: 设置结果
 //   - error: 请求错误
-func (c *Client) SetVariable(user, tokenid, cloudkey, cloudvalue, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) SetVariable(user, token, cloudkey, cloudvalue, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":       user,
-		"tokenid":    tokenid,
+		"token":      token,
 		"cloudkey":   cloudkey,
 		"cloudvalue": cloudvalue,
 		"ver":        ver,
@@ -1208,7 +1205,7 @@ func (c *Client) SetVariable(user, tokenid, cloudkey, cloudvalue, ver, mac, ip, 
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - cloudkey: 变量名
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -1218,10 +1215,10 @@ func (c *Client) SetVariable(user, tokenid, cloudkey, cloudvalue, ver, mac, ip, 
 // 返回:
 //   - *Result: 删除结果
 //   - error: 请求错误
-func (c *Client) DelVariable(user, tokenid, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) DelVariable(user, token, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"cloudkey": cloudkey,
 		"ver":      ver,
 		"mac":      mac,
@@ -1236,7 +1233,7 @@ func (c *Client) DelVariable(user, tokenid, cloudkey, ver, mac, ip, clientid str
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token（可选，取决于服务器配置）
+//   - token: 登录token（可选，取决于服务器配置）
 //   - cloudkey: 常量名
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -1250,10 +1247,10 @@ func (c *Client) DelVariable(user, tokenid, cloudkey, ver, mac, ip, clientid str
 // 说明:
 //
 //	常量是软件级别的只读配置，所有用户共享
-func (c *Client) Constant(user, tokenid, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) Constant(user, token, cloudkey, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"cloudkey": cloudkey,
 		"ver":      ver,
 		"mac":      mac,
@@ -1268,7 +1265,7 @@ func (c *Client) Constant(user, tokenid, cloudkey, ver, mac, ip, clientid string
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - fun: 函数名
 //   - para: 函数参数（JSON格式）
 //   - ver: 软件版本号
@@ -1283,10 +1280,10 @@ func (c *Client) Constant(user, tokenid, cloudkey, ver, mac, ip, clientid string
 // 说明:
 //
 //	调用服务器端定义的PHP函数
-func (c *Client) Func(user, tokenid, fun, para, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) Func(user, token, fun, para, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"fun":      fun,
 		"para":     para,
 		"ver":      ver,
@@ -1332,7 +1329,7 @@ func (c *Client) Func2(fun, para, ver, mac, ip, clientid string) (*Result, error
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - fun: 函数名
 //   - para: 函数参数（JSON格式）
 //   - ver: 软件版本号
@@ -1343,10 +1340,10 @@ func (c *Client) Func2(fun, para, ver, mac, ip, clientid string) (*Result, error
 // 返回:
 //   - *Result: 函数执行结果
 //   - error: 请求错误
-func (c *Client) CallPHP(user, tokenid, fun, para, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) CallPHP(user, token, fun, para, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"fun":      fun,
 		"para":     para,
 		"ver":      ver,
@@ -1516,7 +1513,7 @@ func (c *Client) QuickAuth(user, pwd, ver string) (*Result, error) {
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - sl: 扣除数量
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -1526,10 +1523,10 @@ func (c *Client) QuickAuth(user, pwd, ver string) (*Result, error) {
 // 返回:
 //   - *Result: 扣除结果
 //   - error: 请求错误
-func (c *Client) DeductPoints(user, tokenid string, sl int, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) DeductPoints(user, token string, sl int, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"sl":       strconv.Itoa(sl),
 		"ver":      ver,
 		"mac":      mac,
@@ -1688,7 +1685,7 @@ func (c *Client) MD5Check(ver, mac, ip, clientid string) (*Result, error) {
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -1701,10 +1698,10 @@ func (c *Client) MD5Check(ver, mac, ip, clientid string) (*Result, error) {
 // 说明:
 //
 //	获取用户的第二块云数据区域（data3字段）
-func (c *Client) GetUdata2(user, tokenid, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) GetUdata2(user, token, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"ver":      ver,
 		"mac":      mac,
 		"ip":       ip,
@@ -1718,7 +1715,7 @@ func (c *Client) GetUdata2(user, tokenid, ver, mac, ip, clientid string) (*Resul
 //
 // 参数:
 //   - user: 用户名
-//   - tokenid: 登录token
+//   - token: 登录token
 //   - udata: 用户数据
 //   - ver: 软件版本号
 //   - mac: 机器码
@@ -1732,10 +1729,10 @@ func (c *Client) GetUdata2(user, tokenid, ver, mac, ip, clientid string) (*Resul
 // 说明:
 //
 //	设置用户的第二块云数据区域（data3字段）
-func (c *Client) SetUdata2(user, tokenid, udata, ver, mac, ip, clientid string) (*Result, error) {
+func (c *Client) SetUdata2(user, token, udata, ver, mac, ip, clientid string) (*Result, error) {
 	params := map[string]string{
 		"user":     user,
-		"tokenid":  tokenid,
+		"token":    token,
 		"udata":    udata,
 		"ver":      ver,
 		"mac":      mac,
@@ -1801,7 +1798,7 @@ type HeartbeatErrorCallback func(err error, consecutiveFailures int)
 //
 // 参数:
 //   - user: 用户名（为空时使用当前登录用户 currentUser）
-//   - tokenid: 登录Token（为空时使用当前Token currentToken）
+//   - token: 登录Token（为空时使用当前Token currentToken）
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -1829,7 +1826,7 @@ type HeartbeatErrorCallback func(err error, consecutiveFailures int)
 //   - 使用 atomic.Int32 保证 hbRunning 标志的线程安全
 //   - 内部缓存参数，避免闭包捕获问题
 //   - 支持可选的错误回调函数
-func (c *Client) StartAutoHeartbeat(user, tokenid, ver, mac, ip, clientid string) error {
+func (c *Client) StartAutoHeartbeat(user, token, ver, mac, ip, clientid string) error {
 	if atomic.LoadInt32(&c.hbRunning) == 1 {
 		return fmt.Errorf("自动心跳已在运行中，请先调用 StopAutoHeartbeat 停止")
 	}
@@ -1837,13 +1834,13 @@ func (c *Client) StartAutoHeartbeat(user, tokenid, ver, mac, ip, clientid string
 	if user == "" {
 		user = c.currentUser
 	}
-	if tokenid == "" {
-		tokenid = c.currentToken
+	if token == "" {
+		token = c.currentToken
 	}
 
 	c.hbParams = &heartbeatParams{
 		User:     user,
-		TokenID:  tokenid,
+		TokenID:  token,
 		Ver:      ver,
 		Mac:      mac,
 		IP:       ip,
@@ -1866,7 +1863,7 @@ func (c *Client) StartAutoHeartbeat(user, tokenid, ver, mac, ip, clientid string
 //
 // 参数:
 //   - user: 用户名（为空时使用当前登录用户）
-//   - tokenid: 登录Token（为空时使用当前Token）
+//   - token: 登录Token（为空时使用当前Token）
 //   - ver: 软件版本号
 //   - mac: 机器码
 //   - ip: 客户端IP地址
@@ -1875,9 +1872,9 @@ func (c *Client) StartAutoHeartbeat(user, tokenid, ver, mac, ip, clientid string
 //
 // 返回:
 //   - error: 如果心跳已在运行则返回错误
-func (c *Client) StartAutoHeartbeatWithCallback(user, tokenid, ver, mac, ip, clientid string, onError HeartbeatErrorCallback) error {
+func (c *Client) StartAutoHeartbeatWithCallback(user, token, ver, mac, ip, clientid string, onError HeartbeatErrorCallback) error {
 	c.hbOnError = onError
-	return c.StartAutoHeartbeat(user, tokenid, ver, mac, ip, clientid)
+	return c.StartAutoHeartbeat(user, token, ver, mac, ip, clientid)
 }
 
 // StopAutoHeartbeat 停止自动心跳
