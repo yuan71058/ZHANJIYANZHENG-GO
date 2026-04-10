@@ -2,7 +2,7 @@
 
 # 冬浩验证系统 - Go SDK
 
-![Version](https://img.shields.io/badge/version-1.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3-blue.svg)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8.svg?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
@@ -16,6 +16,24 @@
 
 ## 更新日志
 
+### v1.3 (2026-04-10)
+
+#### 重大变更：统一使用 token 参数
+- **移除 tokenid 参数，统一使用 token**
+  - 所有 API 接口参数名从 `tokenid` 改为 `token`
+  - 服务端所有模块（login/heartbeat/logout/profiler/constant）统一使用 `token` 字段
+  - `GetTokenID()` 方法只读取 `token` 字段，不再兼容旧版 `tokenid`
+
+#### 变更文件
+| 文件 | 变更内容 |
+|------|----------|
+| `login.php` | 返回字段 `tokenid` → `token` |
+| `heartbeat.php` | 接收参数 `tokenid` → `token` |
+| `logout.php` | 接收参数 `tokenid` → `token` |
+| `profiler.php` | 接收参数 `tokenid` → `token` |
+| `constant.php` | 接收参数 `tokenid` → `token` |
+| `donghao.go` | 所有函数参数和请求参数改为 `token` |
+
 ### v1.2 (2026-04-10)
 
 #### 重大变更：Token 认证机制升级
@@ -27,7 +45,7 @@
 #### 服务端变更
 | 文件 | 变更内容 |
 |------|----------|
-| `login.php` | 生成随机 Token 并返回 `tokenid` |
+| `login.php` | 生成随机 Token 并返回 `token` |
 | `heartbeat.php` | 使用 `token` 字段查询 |
 | `logout.php` | 使用 `token` 字段查询 |
 | `profiler.php` | 使用 `token` 字段查询 |
@@ -49,9 +67,9 @@
 
 #### Bug 修复
 - **修复登录后心跳失败的问题**
-  - 问题原因：SDK 在解析响应时直接使用了顶层的 `token`（MD5 hash），而没有优先使用 `result.tokenid`
+  - 问题原因：SDK 在解析响应时直接使用了顶层的 `token`（MD5 hash），而没有优先使用 `result.token`
   - 影响范围：所有加密模式（RC4/RSA/Base64/AES-GCM）下的登录和心跳功能
-  - 修复方案：修改 `httpPost` 函数中的 Token 设置逻辑，优先使用 `result.tokenid`
+  - 修复方案：修改 `httpPost` 函数中的 Token 设置逻辑，优先使用 `result.token`
 
 #### 代码变更
 - `donghao.go`: 修改 `httpPost` 函数中三处 Token 设置逻辑
@@ -62,8 +80,8 @@
   }
   
   // 修复后
-  if tokenID := result.GetTokenID(); tokenID != "" {
-      c.currentToken = tokenID
+  if token := result.GetToken(); token != "" {
+      c.currentToken = token
   } else if result.Token != "" {
       c.currentToken = result.Token
   }
@@ -100,119 +118,81 @@ go get github.com/yuan71058/DONGHAO-GO-SDK
 
 ## 快速开始
 
+### 基础用法
+
 ```go
 package main
 
 import (
     "fmt"
     "log"
-
-    donghao "github.com/yuan71058/DONGHAO-GO-SDK"
+    "github.com/yuan71058/DONGHAO-GO-SDK"
 )
 
 func main() {
     // 创建客户端
     client := donghao.NewClient("https://your-api-domain.com", 1)
-    client.SetTimeout(30)
-
+    
+    // 获取设备信息
+    mac := donghao.GetMachineCodeSafe()
+    ip := donghao.GetLocalIP()
+    clientID := donghao.GenerateClientID()
+    
     // 用户登录
-    result, err := client.Login("username", "password", "1.0", "mac123", "192.168.1.1", "client001")
+    result, err := client.Login("username", "password", "1.0", mac, ip, clientID)
     if err != nil {
         log.Fatal(err)
     }
-
+    
     if result.IsSuccess() {
-        fmt.Println("登录成功, Token:", client.GetToken())
+        fmt.Println("登录成功，Token:", client.GetToken())
+        
+        // 启动自动心跳
+        client.StartAutoHeartbeat("", "", "1.0", mac, ip, clientID)
+        defer client.StopAutoHeartbeat()
+        
+        // 获取用户信息
+        userResult, _ := client.GetUser("username", client.GetToken(), "1.0", mac, ip, clientID)
+        fmt.Println("用户信息:", userResult.Msg())
     } else {
         fmt.Println("登录失败:", result.Msg())
     }
 }
 ```
 
----
-
-## 客户端配置
-
-### 创建客户端
+### 启用加密
 
 ```go
-client := donghao.NewClient(baseURL string, appID int)
+client := donghao.NewClient("https://your-api-domain.com", 1)
+
+// RC4 加密
+client.SetEncryption(donghao.ENC_RC4, "your-rc4-key")
+
+// AES-256-GCM 加密（推荐）
+client.SetEncryption(donghao.ENC_AES_GCM, "your-32-byte-key-here!!!")
+
+// RSA 加密
+client.SetEncryption(donghao.ENC_RSA, "your-public-key")
 ```
 
-| 参数 | 说明 |
-|------|------|
-| `baseURL` | API 服务端地址 |
-| `appID` | 软件ID（从管理后台获取） |
-
-### 配置方法
-
-| 方法 | 说明 |
-|------|------|
-| `SetTimeout(seconds int)` | 设置 HTTP 超时时间（默认 30 秒） |
-| `SetEncryption(encType int, key string)` | 设置加密方式和密钥 |
-| `SetSignConfig(appKey, template, needSign)` | 配置 MD5 签名 |
-| `SetHeartbeatInterval(seconds int)` | 设置心跳间隔（默认 150 秒） |
-
-### 加密类型
-
-| 常量 | 值 | 说明 |
-|------|-----|------|
-| `ENC_NONE` | 0 | 明文传输 |
-| `ENC_RC4` | 1 | RC4 对称加密 |
-| `ENC_RSA` | 2 | RSA 非对称加密 |
-| `ENC_BASE64` | 3 | Base64 编码 |
-| `ENC_CUSTOM` | 4 | 自定义加密 |
-| `ENC_AES_GCM` | 5 | AES-256-GCM 认证加密 |
+### 启用签名
 
 ```go
-// 使用 RC4 加密
-client.SetEncryption(donghao.ENC_RC4, "your-secret-key")
-
-// 使用 AES-256-GCM 加密
-client.SetEncryption(donghao.ENC_AES_GCM, "32-byte-key-here!!!")
+client.SetSignConfig("your-app-key", "[data]xxx[key]yyy", true)
 ```
-
----
-
-## 设备信息获取
-
-```go
-// 获取机器码
-machineCode, err := donghao.GetMachineCode()
-if err != nil {
-    machineCode = donghao.GetMachineCodeSafe() // 备用方法
-}
-
-// 获取硬件 ID
-hardwareID, _ := donghao.GetHardwareID()
-
-// 获取详细硬件信息
-hwInfo, _ := donghao.GetHardwareInfo()
-
-// 生成随机客户端 ID
-clientID := donghao.GenerateClientID()
-```
-
-| 函数 | 返回值 | 平台 |
-|------|--------|------|
-| `GetMachineCode()` | 机器码 (XXXX-XXXX-XXXX-XXXX) | Win/Android |
-| `GetMachineCodeSafe()` | 机器码（不报错） | 全平台 |
-| `GetHardwareID()` | 硬件 ID | Win/Android |
-| `GetHardwareInfo()` | 硬件信息 Map | Win/Android |
-| `GenerateClientID()` | 随机客户端 ID | 全平台 |
 
 ---
 
 ## API 接口列表
 
-### 返回结果结构体
+### Result 对象方法
 
 ```go
 type Result struct {
-    Code   int         // 状态码: 200/1=成功
-    Result interface{} // 结果数据
-    Data   interface{} // 业务数据
-    Uuid   string      // UUID
+    Code   int         // 返回状态码
+    Result interface{} // 返回数据
+    Data   interface{} // 兼容字段
+    Uuid   string      // 客户端UUID
     Token  string      // 新 Token
 }
 ```
@@ -221,7 +201,7 @@ type Result struct {
 |------|------|
 | `IsSuccess() bool` | 判断是否成功 |
 | `Msg() string` | 获取返回消息 |
-| `GetTokenID() string` | 获取 TokenID（随机 Token） |
+| `GetToken() string` | 获取 Token（随机 Token） |
 | `GetData() (string, error)` | 获取用户数据（Base64 解码） |
 | `GetGroupData() (string, error)` | 获取分组数据（Base64 解码） |
 | `GetVariableValue() (string, error)` | 获取变量值（Base64 解码） |
@@ -233,9 +213,9 @@ type Result struct {
 | `Login(user, pwd, ver, mac, ip, clientid)` | 用户登录 |
 | `LoginCard(card, ver, mac, ip, clientid)` | 卡密登录 |
 | `Reg(user, pwd, card, qq, email, tjr, ver, mac, ip, clientid)` | 用户注册 |
-| `Logout(user, tokenid, ver, mac, ip, clientid)` | 用户注销 |
-| `Heartbeat(user, tokenid, ver, mac, ip, clientid)` | 心跳维持在线 |
-| `GetUser(user, tokenid, ver, mac, ip, clientid)` | 获取用户信息 |
+| `Logout(user, token, ver, mac, ip, clientid)` | 用户注销 |
+| `Heartbeat(user, token, ver, mac, ip, clientid)` | 心跳维持在线 |
+| `GetUser(user, token, ver, mac, ip, clientid)` | 获取用户信息 |
 | `Uppwd(user, pwd, newpwd, ver, mac, ip, clientid)` | 修改密码 |
 | `Binding(user, pwd, newuser, newmac, newip, qq, ver, mac, ip, clientid)` | 绑定新设备 |
 | `Bindreferrer(user, pwd, tjr, ver, mac, ip, clientid)` | 绑定推荐人 |
@@ -250,27 +230,27 @@ type Result struct {
 
 | 方法 | 说明 |
 |------|------|
-| `GetUdata(user, tokenid, ver, mac, ip, clientid)` | 获取用户数据 |
-| `SetUdata(user, tokenid, udata, ver, mac, ip, clientid)` | 设置用户数据 |
-| `GetUdata2(user, tokenid, ver, mac, ip, clientid)` | 获取用户数据2 |
-| `SetUdata2(user, tokenid, udata, ver, mac, ip, clientid)` | 设置用户数据2 |
+| `GetUdata(user, token, ver, mac, ip, clientid)` | 获取用户数据 |
+| `SetUdata(user, token, udata, ver, mac, ip, clientid)` | 设置用户数据 |
+| `GetUdata2(user, token, ver, mac, ip, clientid)` | 获取用户数据2 |
+| `SetUdata2(user, token, udata, ver, mac, ip, clientid)` | 设置用户数据2 |
 
 ### 云变量/常量
 
 | 方法 | 说明 |
 |------|------|
-| `GetVariable(user, tokenid, key, ver, mac, ip, clientid)` | 获取云变量 |
-| `SetVariable(user, tokenid, key, value, ver, mac, ip, clientid)` | 设置云变量 |
-| `DelVariable(user, tokenid, key, ver, mac, ip, clientid)` | 删除云变量 |
-| `Constant(user, tokenid, key, ver, mac, ip, clientid)` | 获取云常量 |
+| `GetVariable(user, token, key, ver, mac, ip, clientid)` | 获取云变量 |
+| `SetVariable(user, token, key, value, ver, mac, ip, clientid)` | 设置云变量 |
+| `DelVariable(user, token, key, ver, mac, ip, clientid)` | 删除云变量 |
+| `Constant(user, token, key, ver, mac, ip, clientid)` | 获取云常量 |
 
 ### 云计算函数
 
 | 方法 | 说明 |
 |------|------|
-| `Func(user, tokenid, func, para, ver, mac, ip, clientid)` | 云计算函数（需登录） |
+| `Func(user, token, func, para, ver, mac, ip, clientid)` | 云计算函数（需登录） |
 | `Func2(func, para, ver, mac, ip, clientid)` | 云计算函数（免登录） |
-| `CallPHP(user, tokenid, func, para, ver, mac, ip, clientid)` | 调用 PHP 函数（需登录） |
+| `CallPHP(user, token, func, para, ver, mac, ip, clientid)` | 调用 PHP 函数（需登录） |
 | `CallPHP2(func, para, ver, mac, ip, clientid)` | 调用 PHP 函数（免登录） |
 
 ### 黑名单管理
@@ -284,7 +264,7 @@ type Result struct {
 
 | 方法 | 说明 |
 |------|------|
-| `DeductPoints(user, tokenid, count, ver, mac, ip, clientid)` | 扣除积分 |
+| `DeductPoints(user, token, count, ver, mac, ip, clientid)` | 扣除积分 |
 | `AddLog(user, info, ver, mac, ip, clientid)` | 添加日志 |
 | `CheckAuth(user, pwd, md5, ver, mac, ip, clientid)` | 验证授权 |
 | `Init(ver, mac, ip, clientid)` | 软件初始化 |
@@ -318,29 +298,76 @@ if result.IsSuccess() {
 
 ---
 
-## 项目结构
+## 自动心跳
 
+```go
+// 启动自动心跳（后台 goroutine 定时发送）
+client.StartAutoHeartbeat("", "", "1.0", mac, ip, clientID)
+
+// 带错误回调的自动心跳
+client.StartAutoHeartbeatWithCallback("", "", "1.0", mac, ip, clientID, 
+    func(err error, failures int) {
+        fmt.Printf("心跳失败 %d 次: %v\n", failures, err)
+    })
+
+// 停止自动心跳
+defer client.StopAutoHeartbeat()
 ```
-DONGHAO-GO/
-├── donghao.go       # SDK 核心实现
-├── example/
-│   └── main.go      # 完整使用示例
-├── README.md         # 本文件
-├── API.md           # 详细 API 文档
-├── go.mod
-└── LICENSE          # MIT 协议
+
+---
+
+## 加密类型
+
+```go
+const (
+    ENC_NONE    = 0 // 不加密
+    ENC_RC4     = 1 // RC4 流加密
+    ENC_RSA     = 2 // RSA 非对称加密
+    ENC_BASE64  = 3 // Base64 编码
+    ENC_CUSTOM  = 4 // 自定义加密
+    ENC_AES_GCM = 5 // AES-256-GCM 认证加密
+)
 ```
+
+---
+
+## 设备信息采集
+
+```go
+// 获取机器码（Windows: CPU+主板+硬盘序列号组合）
+mac := donghao.GetMachineCodeSafe()
+
+// 获取本地 IP 地址
+ip := donghao.GetLocalIP()
+
+// 生成唯一客户端 ID
+clientID := donghao.GenerateClientID()
+
+// 获取硬件信息（详细）
+hwInfo, _ := donghao.GetHardwareInfo()
+fmt.Println(hwInfo.CPUID, hwInfo.BaseboardSerial, hwInfo.DiskSerial)
+```
+
+---
+
+## 注意事项
+
+1. **Token 管理**: 登录成功后 SDK 自动保存 Token，后续调用会自动使用
+2. **心跳维持**: 建议启动自动心跳防止会话过期
+3. **加密选择**: 生产环境建议使用 AES-256-GCM 或 RSA
+4. **错误处理**: 始终检查 `err` 和 `result.IsSuccess()`
+5. **线程安全**: 同一客户端实例可并发使用
 
 ---
 
 ## 许可证
 
-[MIT License](LICENSE)
+MIT License
 
 ---
 
-<div align="center">
+## 相关链接
 
-**冬浩验证系统** - 让软件保护变得简单高效
-
-</div>
+- [冬浩验证系统](https://github.com/yuan71058/donghao)
+- [Go SDK GitHub](https://github.com/yuan71058/DONGHAO-GO-SDK)
+- [API 详细文档](API.md)
