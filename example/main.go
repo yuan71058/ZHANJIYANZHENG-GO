@@ -48,8 +48,8 @@ func main() {
 	exampleBlacklist(client)
 	exampleOtherFeatures(client)
 	exampleCloudFunctions(client)
-	exampleAutoHeartbeat(client) // 自动心跳维持在线功能（基于context.Context）
-	exampleFullFlow()            // 完整实战流程（卡密登录 + 自动心跳）
+	// exampleAutoHeartbeat(client) // 自动心跳维持在线功能（基于context.Context）
+	// exampleFullFlow()            // 完整实战流程（卡密登录 + 自动心跳）
 }
 
 // exampleDeviceID 展示设备信息采集功能

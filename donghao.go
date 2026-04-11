@@ -1954,6 +1954,12 @@ func (c *Client) heartbeatLoop() {
 				c.notifyHeartbeatError(err, consecutiveFailures)
 			} else if result.IsSuccess() {
 				consecutiveFailures = 0
+				if newToken := result.Token; newToken != "" && newToken != c.currentToken {
+					c.currentToken = newToken
+					if p.Token != "" {
+						p.Token = newToken
+					}
+				}
 				fmt.Printf("[DEBUG] 心跳成功 Token=%s\n", result.Token)
 			} else {
 				consecutiveFailures++
