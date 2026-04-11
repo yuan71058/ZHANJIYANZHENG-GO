@@ -2,7 +2,7 @@
 
 # 冬浩验证系统 - Go SDK
 
-![Version](https://img.shields.io/badge/version-1.3-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4-blue.svg)
 ![Go](https://img.shields.io/badge/Go-1.25+-00ADD8.svg?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
@@ -15,6 +15,35 @@
 ---
 
 ## 更新日志
+
+### v1.4 (2026-04-11)
+
+#### Bug 修复
+- **修复 httpPost token 参数被无条件覆盖的问题**
+  - 问题原因：`httpPost()` 在注入 `currentToken` 时，会覆盖 `Heartbeat()` 等方法手动传入的 `token` 参数
+  - 影响范围：所有通过 `httpPost` 发送请求且需要自定义 `token` 的接口
+  - 修复方案：添加 `params["token"] == ""` 判断，只在参数中没有 token 时才自动注入
+  ```go
+  // 修复前
+  if c.currentToken != "" {
+      params["token"] = c.currentToken
+  }
+  
+  // 修复后
+  if c.currentToken != "" && params["token"] == "" {
+      params["token"] = c.currentToken
+  }
+  ```
+
+- **修复 heartbeatParams 字段命名误导**
+  - 字段名 `TokenID` 改为 `Token`，与实际用途保持一致
+  - 同步更新所有引用处（心跳循环、参数赋值）
+
+#### 变更文件
+| 文件 | 变更内容 |
+|------|----------|
+| `donghao.go` | httpPost 添加 token 存在性检查 |
+| `donghao.go` | heartbeatParams.TokenID → Token |
 
 ### v1.3 (2026-04-10)
 

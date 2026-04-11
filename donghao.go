@@ -40,9 +40,9 @@
 //   - 所有请求发送到统一入口: {BaseURL}/api.php?appid={AppID}
 //   - 通过action参数指定接口名称（如：login, logout, heartbeat等）
 //
-// 版本: 1.0
+// 版本: 1.1
 // 作者: 冬浩验证系统
-// 日期: 2026-03-31
+// 日期: 2026-04-11
 package donghao
 
 import (
@@ -438,7 +438,7 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 	if c.currentUUID != "" {
 		params["uuid"] = c.currentUUID
 	}
-	if c.currentToken != "" {
+	if c.currentToken != "" && params["token"] == "" {
 		params["token"] = c.currentToken
 	}
 
@@ -1775,7 +1775,7 @@ func (c *Client) Relay(params map[string]string, ver, mac, ip, clientid string) 
 // 缓存自动心跳所需的全部参数，避免每次循环重新构建
 type heartbeatParams struct {
 	User     string // 用户名
-	TokenID  string // 登录Token
+	Token    string // 登录Token
 	Ver      string // 软件版本号
 	Mac      string // 机器码
 	IP       string // IP地址
@@ -1840,7 +1840,7 @@ func (c *Client) StartAutoHeartbeat(user, token, ver, mac, ip, clientid string) 
 
 	c.hbParams = &heartbeatParams{
 		User:     user,
-		TokenID:  token,
+		Token:    token,
 		Ver:      ver,
 		Mac:      mac,
 		IP:       ip,
@@ -1946,7 +1946,7 @@ func (c *Client) heartbeatLoop() {
 			}
 
 			p := c.hbParams
-			result, err := c.Heartbeat(p.User, p.TokenID, p.Ver, p.Mac, p.IP, p.ClientID)
+			result, err := c.Heartbeat(p.User, p.Token, p.Ver, p.Mac, p.IP, p.ClientID)
 
 			if err != nil {
 				consecutiveFailures++
