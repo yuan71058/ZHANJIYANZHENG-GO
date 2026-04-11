@@ -12,9 +12,9 @@
 //
 //	go run example/main.go
 //
-// 版本: 1.0
+// 版本: 1.4
 // 作者: 冬浩验证系统
-// 日期: 2026-03-31
+// 日期: 2026-04-11
 package main
 
 import (
@@ -49,6 +49,7 @@ func main() {
 	exampleOtherFeatures(client)
 	exampleCloudFunctions(client)
 	exampleAutoHeartbeat(client) // 自动心跳维持在线功能（基于context.Context）
+	exampleFullFlow()            // 完整实战流程（卡密登录 + 自动心跳）
 }
 
 // exampleDeviceID 展示设备信息采集功能
@@ -332,7 +333,8 @@ func exampleHeartbeat(client *donghao.Client) {
 // exampleGetUser 展示获取用户信息功能
 //
 // 该功能用于获取用户的详细账户信息，
-//   包括用户名、到期时间、会员等级等信息
+//
+//	包括用户名、到期时间、会员等级等信息
 func exampleGetUser(client *donghao.Client) {
 	fmt.Println("6. 获取用户信息功能演示")
 	fmt.Println("----------------------------------------")
@@ -549,7 +551,7 @@ func exampleBlacklist(client *donghao.Client) {
 	result2, err := client.SetBlack(
 		"ip",
 		"192.168.1.100",
-	 "违规操作被封禁",
+		"违规操作被封禁",
 		"1.0.0",
 		"00:11:22:33:44:55",
 		"192.168.1.100",
@@ -622,10 +624,10 @@ func exampleOtherFeatures(client *donghao.Client) {
 	result3, err := client.Binding(
 		"testuser",
 		"password",
-		"newusername",    // 如果要更改用户名则填写新用户名，否则留空
+		"newusername",       // 如果要更改用户名则填写新用户名，否则留空
 		"AA:BB:CC:DD:EE:FF", // 如果要更换设备则填写新MAC地址，否则留空
-		"192.168.1.200", // 如果要更换设备则填写新IP地址，否则留空
-		"123456789",     // 如果要更换则填写新QQ号，否则留空
+		"192.168.1.200",     // 如果要更换设备则填写新IP地址，否则留空
+		"123456789",         // 如果要更换则填写新QQ号，否则留空
 		"1.0.0",
 		"00:11:22:33:44:55",
 		"192.168.1.100",
@@ -681,7 +683,7 @@ func exampleOtherFeatures(client *donghao.Client) {
 	fmt.Println("\n11.6 添加日志")
 	result6, err := client.AddLog(
 		"testuser",
-	 "[用户日志] 测试添加一条用户操作日志到服务器",
+		"[用户日志] 测试添加一条用户操作日志到服务器",
 		"1.0.0",
 		"00:11:22:33:44:55",
 		"192.168.1.100",
@@ -813,9 +815,14 @@ func exampleCloudFunctions(client *donghao.Client) {
 // 使用 context.Context 实现优雅取消，支持错误回调。
 //
 // 使用方式：
-//   1. 登录成功后调用 StartAutoHeartbeat 启动（user/tokenid 可为空自动填充）
-//   2. 程序退出前调用 StopAutoHeartbeat 停止
-//   3. 可选：使用 IsHeartbeatRunning() 检查状态
+//  1. 登录成功后调用 StartAutoHeartbeat 启动（user/token 可为空自动填充）
+//  2. 程序退出前调用 StopAutoHeartbeat 停止
+//  3. 可选：使用 IsHeartbeatRunning() 检查状态
+//
+// Token 机制说明（v1.2+）：
+//   - 登录时服务端返回随机 Token（MD5格式）
+//   - 心跳时使用该 Token 进行会话验证
+//   - SDK 自动管理 Token 的存储和传递，无需手动处理
 func exampleAutoHeartbeat(client *donghao.Client) {
 	fmt.Println("13. 自动心跳维持在线功能演示")
 	fmt.Println("----------------------------------------")
@@ -823,10 +830,10 @@ func exampleAutoHeartbeat(client *donghao.Client) {
 	// 设置心跳间隔为10秒（演示用，实际建议60-300秒）
 	client.HeartbeatInterval = 10 * time.Second
 
-	// 方式一：基本用法（启动自动心跳，user/tokenid 为空时自动使用登录信息）
+	// 方式一：基本用法（启动自动心跳，user/token 为空时自动使用登录信息）
 	err := client.StartAutoHeartbeat(
 		"", // user: 为空自动使用 currentUser
-		"", // tokenid: 为空自动使用 currentToken
+		"", // token: 为空自动使用 currentToken
 		"1.0.0",
 		"00:11:22:33:44:55",
 		"192.168.1.100",
@@ -841,6 +848,7 @@ func exampleAutoHeartbeat(client *donghao.Client) {
 
 	fmt.Println("✅ 自动心跳已启动!")
 	fmt.Printf("   心跳状态: %v\n", client.IsHeartbeatRunning())
+	fmt.Printf("   当前Token: %s\n", client.GetToken())
 	fmt.Println("   心跳将在后台自动运行...")
 
 	// 模拟程序运行一段时间
@@ -864,4 +872,83 @@ func exampleAutoHeartbeat(client *donghao.Client) {
 	// 		}
 	// 	},
 	// )
+}
+
+// exampleFullFlow 展示完整的卡密登录 + 自动心跳实战流程
+//
+// 这是最常见的使用场景：
+//  1. 用户输入卡密 → 调用 LoginCard 登录
+//  2. 登录成功 → 启动自动心跳维持在线
+//  3. 程序退出 → 停止心跳并清理资源
+//
+// 适用场景：发卡平台、软件授权验证等
+func exampleFullFlow() {
+	fmt.Println("14. 完整实战流程演示（卡密登录 + 自动心跳）")
+	fmt.Println("----------------------------------------")
+
+	// 创建客户端
+	client := donghao.NewClient("http://your-domain.com", 1)
+	client.SetTimeout(30)
+
+	// 获取设备信息
+	mac := donghao.GetMachineCodeSafe()
+	ip := donghao.GetLocalIP()
+	clientID := donghao.GenerateClientID()
+
+	fmt.Printf("设备信息: MAC=%s IP=%s ClientID=%s\n", mac, ip, clientID)
+
+	// 步骤1: 卡密登录
+	cardKey := "YOUR_CARD_KEY_HERE"
+	result, err := client.LoginCard(cardKey, "1.0.0", mac, ip, clientID)
+	if err != nil {
+		log.Fatalf("❌ 卡密登录请求失败: %v\n", err)
+	}
+
+	if !result.IsSuccess() {
+		log.Fatalf("❌ 卡密登录失败: %s\n", result.Msg())
+	}
+
+	fmt.Printf("✅ 卡密登录成功!\n")
+	fmt.Printf("   用户名: %s\n", client.GetCurrentUser())
+	fmt.Printf("   Token: %s\n", client.GetToken())
+
+	if m := result.GetResultMap(); m != nil {
+		if endtime, ok := m["endtime"].(string); ok {
+			fmt.Printf("   到期时间: %s\n", endtime)
+		}
+		if point, ok := m["point"].(float64); ok {
+			fmt.Printf("   剩余点数: %.0f\n", point)
+		}
+	}
+
+	// 步骤2: 启动自动心跳（user和token为空，自动使用登录后的值）
+	err = client.StartAutoHeartbeatWithCallback(
+		"", // user: 自动使用 currentUser
+		"", // token: 自动使用 currentToken
+		"1.0.0",
+		mac,
+		ip,
+		clientID,
+		func(err error, count int) {
+			log.Printf("⚠️ 心跳连续失败(%d次): %v\n", count, err)
+			if count >= 3 {
+				log.Println("🔴 连续失败超过3次，建议重新登录！")
+			}
+		},
+	)
+	if err != nil {
+		log.Fatalf("❌ 启动自动心跳失败: %v\n", err)
+	}
+
+	fmt.Println("✅ 自动心跳已启动，程序开始正常运行...")
+	fmt.Println("   (按 Ctrl+C 或等待15秒后自动停止)")
+
+	// 步骤3: 模拟程序主循环运行
+	time.Sleep(15 * time.Second)
+
+	// 步骤4: 程序退出前停止心跳
+	client.StopAutoHeartbeat()
+	fmt.Println("✅ 自动心跳已停止，程序正常退出")
+
+	fmt.Println()
 }
