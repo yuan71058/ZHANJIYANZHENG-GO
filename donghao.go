@@ -480,13 +480,13 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 		postData = postData + "&sign=" + signStr
 	}
 
-	fmt.Printf("[DEBUG] HTTP POST请求: %s\n", apiURL)
-	if c.EncryptionType == ENC_NONE {
-		fmt.Printf("[DEBUG] 提交数据(明文): %s\n", postData)
-	} else {
-		fmt.Printf("[DEBUG] 提交数据(原始): %s\n", plainData)
-		fmt.Printf("[DEBUG] 提交数据(加密): %s\n", postData)
-	}
+	// fmt.Printf("[DEBUG] HTTP POST请求: %s\n", apiURL)
+	// if c.EncryptionType == ENC_NONE {
+	// 	fmt.Printf("[DEBUG] 提交数据(明文): %s\n", postData)
+	// } else {
+	// 	fmt.Printf("[DEBUG] 提交数据(原始): %s\n", plainData)
+	// 	fmt.Printf("[DEBUG] 提交数据(加密): %s\n", postData)
+	// }
 
 	resp, err := c.httpClient.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(postData))
 	if err != nil {
@@ -499,7 +499,7 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 		return nil, err
 	}
 
-	fmt.Printf("[DEBUG] 响应数据: %s\n", string(body))
+	// fmt.Printf("[DEBUG] 响应数据: %s\n", string(body))
 
 	if c.EncryptionType != ENC_NONE {
 		var encryptedResp struct {
@@ -515,7 +515,7 @@ func (c *Client) httpPost(action string, params map[string]string) (*Result, err
 			return nil, fmt.Errorf("解密失败: %v", err)
 		}
 
-		fmt.Printf("[DEBUG] 解密后数据: %s\n", decryptedData)
+		// fmt.Printf("[DEBUG] 解密后数据: %s\n", decryptedData)
 
 		var result Result
 		if err := json.Unmarshal([]byte(decryptedData), &result); err != nil {
